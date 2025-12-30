@@ -6,3 +6,4 @@ numpy
 temp
 yt-dlp
 ffmpeg-python
+scikit-learn
