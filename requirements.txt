@@ -1,0 +1,8 @@
+streamlit
+mediapipe
+opencv-python
+joblib
+numpy
+temp
+yt-dlp
+ffmpeg-python
