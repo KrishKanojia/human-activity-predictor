@@ -122,7 +122,7 @@ if uploaded_file is not None:
 
         # Temp output video
         out_temp = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        fourcc = cv2.VideoWriter_fourcc(*'avc1')
         out = cv2.VideoWriter(out_temp.name, fourcc, fps, (width, height))
 
         frame_count = 0
