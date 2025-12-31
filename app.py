@@ -1,25 +1,16 @@
-
 import streamlit as st
-
 import cv2
-
 import mediapipe as mp
-
 from mediapipe.tasks import python
-
 from mediapipe.tasks.python import vision
-
 import joblib
-
 import numpy as np
-
 import os
-
 import requests
-
 from collections import Counter
-
 import tempfile
+import io
+import av 
 
 
 
@@ -222,36 +213,42 @@ if uploaded_file is not None:
 
 
     elif file_type.startswith('video'):
-
         # ------------------- VIDEO PROCESSING -------------------
-
         tfile = tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[1])
         tfile.write(file_bytes)
+        tfile.close()  # Close the file handle
         video_path = tfile.name
 
         cap = cv2.VideoCapture(video_path)
+        
+        # Safely get FPS
         fps = cap.get(cv2.CAP_PROP_FPS)
+        if fps <= 1 or fps > 120:  # Invalid or unrealistic FPS
+            fps = 30.0  # Common fallback
+        fps_int = int(round(fps))  # PyAV prefers integer
+
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-
-        # Temp output video
-        out_temp = tempfile.NamedTemporaryFile(delete=False, suffix='.webm')
-
-        fourcc = cv2.VideoWriter_fourcc(*'VP80')
-
-        out = cv2.VideoWriter(out_temp.name, fourcc, fps, (width, height))
 
         frame_count = 0
         predictions = []
 
         stframe = st.empty()
         progress_bar = st.progress(0)
-        status_text = st.empty()
+        st.info("Processing video... This may take a few moments.")
+
+        # In-memory H.264 MP4 encoding with PyAV
+        buffer = io.BytesIO()
+        container = av.open(buffer, mode='w', format='mp4')
+        stream = container.add_stream('h264', rate=fps_int)  # Use integer
+        stream.width = width
+        stream.height = height
+        stream.pix_fmt = 'yuv420p'  # Essential for browser compatibility
+        stream.options = {'crf': '23'}  # Good quality/size trade-off
 
         while cap.isOpened():
             ret, frame = cap.read()
-
-            if not ret: 
+            if not ret:
                 break
 
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -260,76 +257,56 @@ if uploaded_file is not None:
             results = pose_landmarker.detect_for_video(mp_image, timestamp_ms)
 
             if results.pose_landmarks:
-
                 landmarks = results.pose_landmarks[0]
-
                 landmark_array = np.array([[lm.x, lm.y, lm.z] for lm in landmarks]).flatten()
-
                 features = np.zeros((1, 561))
-
                 features[0, :len(landmark_array)] = landmark_array
 
                 pred = model.predict(scaler.transform(features))[0]
-
                 predictions.append(pred)
 
                 draw_landmarks(frame, landmarks)
-
                 cv2.putText(frame, labels.get(pred, "Unknown"), (10, 50),
-
                             cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 255, 0), 3)
 
+            # Encode and mux frame
+            frame_av = av.VideoFrame.from_ndarray(frame, format='bgr24')
+            for packet in stream.encode(frame_av):
+                container.mux(packet)
 
-
-            out.write(frame)
-
+            # Live preview
             stframe.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), use_container_width=True)
 
-
-
             frame_count += 1
+            total_frames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+            if total_frames > 0:
+                progress_bar.progress(min(frame_count / total_frames, 1.0))
 
-            progress_bar.progress(frame_count / cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        # Flush remaining packets
+        for packet in stream.encode(None):
+            container.mux(packet)
 
-
+        container.close()
+        
+        # Get video bytes
+        buffer.seek(0)
+        video_bytes = buffer.getvalue()
+        buffer.close()
 
         cap.release()
-
-        out.release()
-
+        os.unlink(video_path)
         progress_bar.empty()
+        st.info("")  # Clear processing message
 
-        status_text.empty()
-
-
-
-        # Final prediction: most common activity
-
+        # Final prediction (majority vote)
         if predictions:
-
             most_common = Counter(predictions).most_common(1)[0][0]
-
+            count = Counter(predictions).most_common(1)[0][1]
             final_activity = labels.get(most_common, "Unknown")
-
-            st.success(f"🎯 **Most Frequent Activity: {final_activity}** "
-
-                       f"({Counter(predictions).most_common(1)[0][1]} / {len(predictions)} frames)")
-
+            st.success(f"**Most Frequent Activity: {final_activity}** "
+                       f"({count} / {len(predictions)} frames with pose detected)")
         else:
-
             st.warning("No pose detected in any frame.")
 
-            final_activity = "Unknown"
-
-
-
         # Display final annotated video
-
-        st.video(out_temp.name)
-
-
-        # Cleanup temp files
-
-        os.unlink(video_path)
-
-        os.unlink(out_temp.name)
+        st.video(video_bytes)
