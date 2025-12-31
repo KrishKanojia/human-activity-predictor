@@ -235,9 +235,9 @@ if uploaded_file is not None:
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
         # Temp output video
-        out_temp = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
+        out_temp = tempfile.NamedTemporaryFile(delete=False, suffix='.webm')
 
-        fourcc = cv2.VideoWriter_fourcc(*'avc1')
+        fourcc = cv2.VideoWriter_fourcc(*'VP80')
 
         out = cv2.VideoWriter(out_temp.name, fourcc, fps, (width, height))
 
