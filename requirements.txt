@@ -1,6 +1,6 @@
 streamlit
 mediapipe
-opencv-python
+opencv-python-headless
 joblib
 numpy
 temp
