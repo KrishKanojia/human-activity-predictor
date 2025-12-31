@@ -1,9 +1,9 @@
 streamlit
 mediapipe
-opencv-python-headless
+opencv-python
 joblib
 numpy
 temp
 yt-dlp
 ffmpeg-python
-scikit-learn
+av
